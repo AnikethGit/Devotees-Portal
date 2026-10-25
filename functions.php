@@ -3,6 +3,11 @@
 
 require_once 'config.php';
 
+// Maximum number of parayanams a user can have (default 11 + user-added)
+if (!defined('MAX_STEPS')) {
+    define('MAX_STEPS', 50);
+}
+
 // Database Connection
 function getDB() {
     static $conn = null;
@@ -143,7 +148,7 @@ function registerUser($name, $phone, $email, $house_no, $locality, $town, $posta
     if ($stmt->execute()) {
         $user_id = $stmt->insert_id;
         
-        // Initialize user steps
+        // Initialize user steps (11 default parayanams; users can add more later)
         for ($i = 1; $i <= 11; $i++) {
             $db->query("INSERT INTO user_steps (user_id, step_number, completed) VALUES ($user_id, $i, FALSE)");
         }
@@ -251,8 +256,42 @@ function getUserById($user_id) {
 // Get User Steps
 function getUserSteps($user_id) {
     $db = getDB();
-    $result = $db->query("SELECT * FROM user_steps WHERE user_id = $user_id ORDER BY step_number");
-    return $result->fetch_all(MYSQLI_ASSOC);
+    $stmt = $db->prepare("SELECT * FROM user_steps WHERE user_id = ? ORDER BY step_number");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
+
+// Add a new parayanam step for a user (user-initiated, add-only)
+function addUserStep($user_id) {
+    $db = getDB();
+    $user_id = intval($user_id);
+
+    // Enforce upper limit
+    $stmt = $db->prepare("SELECT COUNT(*) AS c FROM user_steps WHERE user_id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $count = (int)$stmt->get_result()->fetch_assoc()['c'];
+
+    if ($count >= MAX_STEPS) {
+        return ['success' => false, 'message' => 'Maximum of ' . MAX_STEPS . ' parayanams reached'];
+    }
+
+    // Next number = current max + 1. UNIQUE (user_id, step_number) blocks duplicates on double-click.
+    $stmt = $db->prepare(
+        "INSERT INTO user_steps (user_id, step_number, started, completed)
+         SELECT ?, COALESCE(MAX(step_number), 0) + 1, 0, 0 FROM user_steps WHERE user_id = ?"
+    );
+    $stmt->bind_param("ii", $user_id, $user_id);
+
+    try {
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'New parayanam added successfully'];
+        }
+    } catch (mysqli_sql_exception $e) {
+        error_log('addUserStep failed: ' . $e->getMessage());
+    }
+    return ['success' => false, 'message' => 'Could not add parayanam. Please try again.'];
 }
 
 // Update User Step

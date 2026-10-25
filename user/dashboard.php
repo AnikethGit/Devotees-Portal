@@ -1,5 +1,5 @@
 <?php
-// user/dashboard.php - User Dashboard with Dual Toggle Step Tracking
+// user/dashboard.php - User Dashboard with Dual Toggle Step Tracking (users can add more parayanams)
 
 require_once '../config.php';
 require_once '../functions.php';
@@ -13,6 +13,20 @@ $success = '';
 // Get user profile
 $user = getUserById($user_id);
 
+// Handle add new parayanam
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_step'])) {
+    if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+        $error = 'Security verification failed';
+    } else {
+        $result = addUserStep($user_id);
+        if ($result['success']) {
+            $success = $result['message'];
+        } else {
+            $error = $result['message'];
+        }
+    }
+}
+
 // Handle step start toggle
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step_start_update'])) {
     if (!verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -21,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step_start_update']))
         $step_number = intval($_POST['step_number']);
         $started = isset($_POST['started']) ? 1 : 0;
         
-        if ($step_number >= 1 && $step_number <= 11) {
+        if ($step_number >= 1) {
             $stmt = $db->prepare("UPDATE user_steps SET started=?, started_at=? WHERE user_id=? AND step_number=?");
             $started_at = $started ? date('Y-m-d H:i:s') : NULL;
             $stmt->bind_param("isii", $started, $started_at, $user_id, $step_number);
@@ -41,12 +55,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step_complete_update'
         $step_number = intval($_POST['step_number']);
         $completed = isset($_POST['completed']) ? 1 : 0;
         
-        if ($step_number >= 1 && $step_number <= 11) {
+        if ($step_number >= 1) {
             // Get current step status
             $check = $db->query("SELECT started FROM user_steps WHERE user_id=$user_id AND step_number=$step_number")->fetch_assoc();
             
             // If trying to complete but not started, show error
-            if ($completed && !$check['started']) {
+            if ($completed && (!$check || !$check['started'])) {
                 $error = 'Please mark step as started before completing it';
             } else {
                 $stmt = $db->prepare("UPDATE user_steps SET completed=?, completed_at=? WHERE user_id=? AND step_number=?");
@@ -61,9 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['step_complete_update'
     }
 }
 
-// Get user steps
+// Get user steps (after any add/update so the page shows fresh data)
 $user_steps = getUserSteps($user_id);
+$total_steps = max(1, count($user_steps));
 $completed_steps = count(array_filter($user_steps, function($s) { return $s['completed']; }));
+$progress_pct = ($completed_steps / $total_steps) * 100;
+$can_add_more = count($user_steps) < MAX_STEPS;
 
 $csrf_token = generateCSRFToken();
 ?>
@@ -104,6 +121,9 @@ $csrf_token = generateCSRFToken();
         
         .step-item.started .step-label { color: #2196f3; }
         .step-item.completed .step-label { text-decoration: line-through; color: #4caf50; }
+        
+        .add-step-box { padding: 20px; text-align: center; border-top: 1px solid #eee; }
+        .add-step-box small { display: block; margin-top: 8px; color: #999; font-size: 12px; }
         
         .quick-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px; }
         
@@ -205,13 +225,13 @@ $csrf_token = generateCSRFToken();
         <div style="display: flex; align-items: center; gap: 20px;">
             <div style="flex: 1;">
                 <div class="progress-bar">
-                    <div class="progress-fill" style="width: <?php echo ($completed_steps / 11) * 100; ?>%;">
-                        <?php echo $completed_steps; ?> / 11
+                    <div class="progress-fill" style="width: <?php echo $progress_pct; ?>%;">
+                        <?php echo $completed_steps; ?> / <?php echo count($user_steps); ?>
                     </div>
                 </div>
             </div>
             <div style="font-size: 24px; font-weight: bold; color: #ff9800; min-width: 100px; text-align: right;">
-                <?php echo round(($completed_steps / 11) * 100); ?>%
+                <?php echo round($progress_pct); ?>%
             </div>
         </div>
     </div>
@@ -219,7 +239,7 @@ $csrf_token = generateCSRFToken();
     <!-- Steps/Tasks Checklist with Dual Toggle -->
     <div class="step-card">
         <div class="step-header">
-            <h2>✅ Your Tasks (11 Parayanam)</h2>
+            <h2>✅ Your Tasks (<?php echo count($user_steps); ?> Parayanam)</h2>
             <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Mark when you start and when you complete each parayanam</p>
         </div>
         
@@ -263,6 +283,20 @@ $csrf_token = generateCSRFToken();
                 </div>
             </div>
             <?php endforeach; ?>
+        </div>
+        
+        <!-- Add More Parayanam -->
+        <div class="add-step-box">
+            <?php if ($can_add_more): ?>
+            <form method="POST" onsubmit="return confirm('Add Parayanam <?php echo count($user_steps) + 1; ?> to your list?');">
+                <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+                <input type="hidden" name="add_step" value="1">
+                <button type="submit" class="btn" id="addStepBtn">➕ Add Another Parayanam</button>
+            </form>
+            <small>Want to do more? Add an extra parayanam to your list.</small>
+            <?php else: ?>
+            <small>You have reached the maximum of <?php echo MAX_STEPS; ?> parayanams.</small>
+            <?php endif; ?>
         </div>
     </div>
 </div>

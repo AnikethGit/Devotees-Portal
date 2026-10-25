@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Get user steps
+// Get user steps (includes any parayanams the user added themselves)
 $user_steps = getUserSteps($user['id']);
 
 // Get login history
@@ -252,7 +252,7 @@ $csrf_token = generateCSRFToken();
         <h2>✅ Parayanam Tracking & Modification (Dual Toggle)</h2>
         
         <div style="background: #eee; padding: 15px; border-radius: 4px; margin-bottom: 20px; border-left: 4px solid #ff9800;">
-            <p style="margin: 0; color: #666;">Toggle start and completion status separately for each step. Each toggle saves its own timestamp.</p>
+            <p style="margin: 0; color: #666;">Toggle start and completion status separately for each step. Each toggle saves its own timestamp. Users can add extra parayanams from their own dashboard.</p>
         </div>
         
         <div style="overflow-x: auto;">
@@ -301,18 +301,19 @@ $csrf_token = generateCSRFToken();
         </div>
         
         <?php 
+        $total_steps = count($user_steps);
         $started_count = count(array_filter($user_steps, function($s) { return $s['started']; }));
         $completed_count = count(array_filter($user_steps, function($s) { return $s['completed']; }));
-        $progress = ($completed_count / 11) * 100;
+        $progress = $total_steps > 0 ? ($completed_count / $total_steps) * 100 : 0;
         ?>
         
         <div style="margin-top: 20px; padding: 15px; background: #666; border-radius: 4px;">
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
                 <div>
-                    <strong>Started:</strong> <?php echo $started_count; ?> / 11
+                    <strong>Started:</strong> <?php echo $started_count; ?> / <?php echo $total_steps; ?>
                 </div>
                 <div>
-                    <strong>Completed:</strong> <?php echo $completed_count; ?> / 11 (<?php echo round($progress); ?>%)
+                    <strong>Completed:</strong> <?php echo $completed_count; ?> / <?php echo $total_steps; ?> (<?php echo round($progress); ?>%)
                 </div>
             </div>
             <div style="width: 100%; height: 20px; background: #eee; border-radius: 4px; overflow: hidden;">
